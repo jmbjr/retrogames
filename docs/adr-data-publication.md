@@ -35,7 +35,6 @@ These fields may be committed to Git and included in the public static site/expo
 - Item type and associated catalog/release ID
 - Draft/confirmed status
 - Version classification
-- Condition level: Great, Good or Fair
 - Component/set relationships expressed only through opaque item IDs
 - Coarse availability: available, unavailable, or unknown
 - Aggregate owned-copy count
@@ -52,7 +51,7 @@ These fields belong in authenticated Firestore views and must be removed from pu
 - Home and current location IDs
 - Session-selected display names
 - Edit, movement, custody, loan, repair and label history
-- Condition notes, defect details, repair notes and cleaning/service notes
+- Condition level (Great, Good or Fair), condition notes, defect details, repair notes and cleaning/service notes
 - Physical-item and family notes not explicitly authored as public
 - Comments and comment authorship
 - Wishlist priorities, family discussion and acquisition candidates
@@ -121,5 +120,5 @@ Removing sensitive data in a later commit does not reliably remove it from Git h
 ## Open decisions before acceptance
 
 - [x] Reviewed/sanitized derivatives may be public; originals and all new images default to family-only.
-- Whether condition level should be public or only the aggregate catalog ownership/availability.
+- [x] Condition level and all condition details remain family-only; public output may show only coarse ownership/availability.
 - Whether opaque physical-item IDs and QR destinations should expose item pages publicly or only a coarse catalog redirect.
