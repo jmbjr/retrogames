@@ -1,6 +1,6 @@
-# ADR draft: data publication and location privacy
+# ADR: data publication and location privacy
 
-Status: Proposed  
+Status: Accepted  
 Issue: #4  
 Date: 2026-08-15
 
@@ -31,7 +31,7 @@ These fields may be committed to Git and included in the public static site/expo
 
 #### Coarse inventory facts
 
-- Opaque physical-item ID and public QR/item URL
+- Opaque physical-item ID and stable QR/item URL
 - Item type and associated catalog/release ID
 - Draft/confirmed status
 - Version classification
@@ -39,7 +39,18 @@ These fields may be committed to Git and included in the public static site/expo
 - Coarse availability: available, unavailable, or unknown
 - Aggregate owned-copy count
 
-Public data must not reveal a person, household, city, exact storage position, private note, serial number, or movement history.
+Public data must not reveal a person, household, city, exact storage position, condition, private note, serial number, or movement history.
+
+#### Selective item publication and QR behavior
+
+Physical-item data remains family-only by default. Each item may later have an explicitly reviewed public projection built only from the public allowlist, using the same opt-in review model as sanitized image derivatives.
+
+- A signed-in family editor may approve individual public fields and reviewed image derivatives.
+- Approval applies to the generated public projection, never to the underlying Firestore document or original image.
+- Unauthenticated QR scans show the approved public projection when one exists.
+- Without an approved projection, the QR route shows only a minimal private-collection notice and a link to the associated public catalog product; it exposes no condition or location.
+- Authenticated family users may continue from the same stable QR URL to the full authorized item view.
+- Condition remains family-only under this ADR and cannot be selectively published unless the policy is explicitly revised.
 
 ### Family-only
 
@@ -117,8 +128,8 @@ Implement a schema-based public exporter with these controls:
 
 Removing sensitive data in a later commit does not reliably remove it from Git history, forks, caches or prior exports. A field must pass public-export validation before its first commit.
 
-## Open decisions before acceptance
+## Accepted publication decisions
 
-- [x] Reviewed/sanitized derivatives may be public; originals and all new images default to family-only.
+- [x] Reviewed/sanitized image derivatives may be public; originals and all new images default to family-only.
 - [x] Condition level and all condition details remain family-only; public output may show only coarse ownership/availability.
-- Whether opaque physical-item IDs and QR destinations should expose item pages publicly or only a coarse catalog redirect.
+- [x] Item records default to family-only. Stable QR routes show a reviewed public projection when one exists; otherwise they reveal only a minimal private-collection notice and the associated public catalog link.
