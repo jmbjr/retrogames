@@ -64,7 +64,7 @@ These fields belong in authenticated Firestore views and must be removed from pu
 - Audit timestamps beyond a coarse public record update date
 - Internal duplicate/merge/archive workflow data
 
-Images remain family-only by default because backgrounds, labels, serial numbers and metadata can leak location or identity. A later feature may publish a specifically reviewed, sanitized image derivative with an explicit `visibility: public` decision.
+Images remain family-only by default because backgrounds, labels, serial numbers and metadata can leak location or identity. A specifically reviewed, sanitized derivative may be published only after an explicit `visibility: public` decision. Publication must strip metadata and exclude visible people, addresses, location clues, serial numbers, account information and private notes; the original remains family-only.
 
 ### Secret/system
 
@@ -120,6 +120,6 @@ Removing sensitive data in a later commit does not reliably remove it from Git h
 
 ## Open decisions before acceptance
 
-- Whether reviewed/sanitized item images should ever be public.
+- [x] Reviewed/sanitized derivatives may be public; originals and all new images default to family-only.
 - Whether condition level should be public or only the aggregate catalog ownership/availability.
 - Whether opaque physical-item IDs and QR destinations should expose item pages publicly or only a coarse catalog redirect.
