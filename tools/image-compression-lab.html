@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Retrogames Image Compression Lab</title>
+  <style>
+    :root{color-scheme:dark;--bg:#10131a;--panel:#1a2030;--ink:#f4f6fb;--muted:#aeb7cc;--accent:#ffb347;--line:#343d52;--good:#72d69c}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif}
+    main{max-width:1100px;margin:auto;padding:max(18px,env(safe-area-inset-top)) 16px 48px}
+    h1{font-size:clamp(1.6rem,6vw,2.5rem);margin:.2em 0}.lede{color:var(--muted);max-width:72ch}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:16px 0}
+    .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+    label{display:grid;gap:5px;color:var(--muted);font-size:.9rem}input,select,button{font:inherit}
+    input[type=number],select{width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0e121b;color:var(--ink)}
+    input[type=file]{width:100%;padding:16px;border:2px dashed var(--line);border-radius:10px;background:#0e121b}
+    button{border:0;border-radius:9px;padding:11px 15px;background:var(--accent);color:#201305;font-weight:700;min-height:44px}
+    button.secondary{background:#30394d;color:var(--ink)}button:disabled{opacity:.5}
+    .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.status{color:var(--muted);min-height:1.5em}
+    .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+    .metric{background:#0e121b;border-radius:10px;padding:12px}.metric strong{display:block;font-size:1.35rem;color:var(--good)}
+    .table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{padding:9px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+    th{position:sticky;top:0;background:var(--panel)}img{width:96px;height:72px;object-fit:contain;background:#090b10;border-radius:6px}
+    .note{color:var(--muted);font-size:.85rem}.warning{color:#ffd08a}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Image Compression Lab</h1>
+  <p class="lede">Tests phone photos entirely in this browser. Source images are not uploaded. Generated files strip normal image metadata because pixels are redrawn through a canvas.</p>
+
+  <section class="panel">
+    <div class="controls">
+      <label>Compressed master long edge
+        <input id="maxEdge" type="number" min="800" max="6000" step="100" value="2560">
+      </label>
+      <label>Master format
+        <select id="format"><option value="image/webp">WebP</option><option value="image/jpeg">JPEG</option></select>
+      </label>
+      <label>Master quality
+        <input id="quality" type="number" min="0.4" max="1" step="0.01" value="0.82">
+      </label>
+      <label>Thumbnail long edge
+        <input id="thumbEdge" type="number" min="160" max="1600" step="40" value="640">
+      </label>
+      <label>Thumbnail quality
+        <input id="thumbQuality" type="number" min="0.3" max="1" step="0.01" value="0.76">
+      </label>
+      <label>Photos per typical item
+        <input id="photosPerItem" type="number" min="1" max="12" step="1" value="3">
+      </label>
+    </div>
+    <p class="note">Suggested sample: cartridge front/back/connector, console overall/serial/electrical label, cable ends, and optional PCB. Use 25–50 items when practical.</p>
+    <input id="files" type="file" accept="image/*" multiple>
+    <div class="actions">
+      <button id="run">Process selected photos</button>
+      <button id="csv" class="secondary" disabled>Download CSV</button>
+      <button id="clear" class="secondary">Clear local results</button>
+    </div>
+    <p id="status" class="status" role="status"></p>
+  </section>
+
+  <section id="summaryPanel" class="panel" hidden>
+    <h2>Sample summary</h2>
+    <div id="summary" class="summary"></div>
+    <p class="note">Storage projection includes one compressed master and one thumbnail per photo. It excludes Firebase document overhead, cache duplication, exports, and retained originals.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Measurements</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Preview</th><th>File</th><th>Original</th><th>Original size</th><th>Master</th><th>Master size</th><th>Thumbnail</th><th>Thumb size</th><th>Reduction</th><th>Time</th><th>Master</th></tr></thead>
+        <tbody id="results"><tr><td colspan="11" class="note">No photos processed.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Visual checks to record</h2>
+    <ul>
+      <li>Can you read small serial and electrical-label text at 100% zoom?</li>
+      <li>Are cartridge-label artwork, connector corrosion, cracks and scratches preserved?</li>
+      <li>Does WebP open correctly on the family’s target Android and iPhones?</li>
+      <li>Mark exceptional PCB, damage or hard-to-read labels for explicit original retention.</li>
+    </ul>
+    <p class="warning">Do not commit source photos or CSV results containing personal filenames until reviewed.</p>
+  </section>
+</main>
+<script type="module">
+const $ = id => document.getElementById(id);
+const rows = [];
+const fmtBytes = n => n < 1024 ? n + " B" : n < 1048576 ? (n/1024).toFixed(1)+" KB" : (n/1048576).toFixed(2)+" MB";
+const fmtDims = (w,h) => w+"×"+h;
+const ext = type => type === "image/webp" ? "webp" : "jpg";
+const safeBase = name => name.replace(/\.[^.]+$/,"").replace(/[^a-z0-9_-]+/gi,"-").replace(/^-|-$/g,"") || "image";
+
+function targetSize(w,h,maxEdge){
+  const scale = Math.min(1,maxEdge/Math.max(w,h));
+  return {w:Math.max(1,Math.round(w*scale)),h:Math.max(1,Math.round(h*scale))};
+}
+async function load(file){
+  if ("createImageBitmap" in window) return createImageBitmap(file,{imageOrientation:"from-image"});
+  return new Promise((resolve,reject)=>{
+    const image=new Image(),url=URL.createObjectURL(file);
+    image.onload=()=>{URL.revokeObjectURL(url);resolve(image)};image.onerror=reject;image.src=url;
+  });
+}
+async function encode(source,w,h,type,quality){
+  const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext("2d",{alpha:false});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
+  ctx.drawImage(source,0,0,w,h);
+  const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error("Browser could not encode "+type)),type,quality));
+  return blob;
+}
+function download(blob,name){
+  const a=document.createElement("a"),url=URL.createObjectURL(blob);a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function render(){
+  const body=$("results");body.textContent="";
+  for(const r of rows){
+    const tr=document.createElement("tr");
+    const preview=document.createElement("img");preview.src=r.preview;preview.alt="";
+    const downloadButton=document.createElement("button");downloadButton.textContent="Download";downloadButton.className="secondary";
+    downloadButton.onclick=()=>download(r.master,r.outputName);
+    const values=[preview,r.name,fmtDims(r.ow,r.oh),fmtBytes(r.originalSize),fmtDims(r.mw,r.mh),fmtBytes(r.master.size),fmtDims(r.tw,r.th),fmtBytes(r.thumb.size),(100*(1-r.master.size/r.originalSize)).toFixed(1)+"%",r.ms.toFixed(0)+" ms",downloadButton];
+    for(const value of values){const td=document.createElement("td");value instanceof Node?td.append(value):td.textContent=value;tr.append(td)}body.append(tr);
+  }
+  if(!rows.length)body.innerHTML='<tr><td colspan="11" class="note">No photos processed.</td></tr>';
+  $("csv").disabled=!rows.length;$("summaryPanel").hidden=!rows.length;
+  if(rows.length){
+    const sum=(key)=>rows.reduce((a,r)=>a+r[key],0);
+    const original=sum("originalSize"),master=rows.reduce((a,r)=>a+r.master.size,0),thumb=rows.reduce((a,r)=>a+r.thumb.size,0);
+    const perPhoto=(master+thumb)/rows.length,perItem=perPhoto*+$("photosPerItem").value;
+    const metrics=[
+      ["Photos",rows.length],["Original total",fmtBytes(original)],["Generated total",fmtBytes(master+thumb)],
+      ["Average reduction",(100*(1-master/original)).toFixed(1)+"%"],["Projected / item",fmtBytes(perItem)],["Projected / 1,000 items",fmtBytes(perItem*1000)]
+    ];
+    $("summary").textContent="";
+    for(const [label,value] of metrics){const d=document.createElement("div");d.className="metric";d.innerHTML="<span>"+label+"</span><strong>"+value+"</strong>";$("summary").append(d)}
+  }
+}
+$("run").onclick=async()=>{
+  const files=[...$("files").files];if(!files.length){$("status").textContent="Choose one or more photos first.";return}
+  $("run").disabled=true;$("status").textContent="Processing locally…";
+  try{
+    for(let i=0;i<files.length;i++){
+      const file=files[i],started=performance.now();$("status").textContent=`Processing ${i+1} of ${files.length}: ${file.name}`;
+      const image=await load(file),ow=image.width,oh=image.height;
+      const ms=targetSize(ow,oh,+$("maxEdge").value),ts=targetSize(ow,oh,+$("thumbEdge").value),type=$("format").value;
+      const master=await encode(image,ms.w,ms.h,type,+$("quality").value),thumb=await encode(image,ts.w,ts.h,type,+$("thumbQuality").value);
+      if(image.close)image.close();
+      const preview=URL.createObjectURL(thumb);
+      rows.push({name:file.name,originalSize:file.size,ow,oh,mw:ms.w,mh:ms.h,tw:ts.w,th:ts.h,master,thumb,preview,ms:performance.now()-started,outputName:safeBase(file.name)+"-master."+ext(type),type});
+      render();
+    }
+    $("status").textContent=`Finished ${files.length} photo(s). Inspect label readability, then download the CSV.`;
+  }catch(error){$("status").textContent="Error: "+error.message}finally{$("run").disabled=false}
+};
+$("clear").onclick=()=>{for(const r of rows)URL.revokeObjectURL(r.preview);rows.length=0;$("files").value="";$("status").textContent="Local results cleared.";render()};
+$("csv").onclick=()=>{
+  const headers=["file","original_width","original_height","original_bytes","master_width","master_height","master_bytes","thumbnail_width","thumbnail_height","thumbnail_bytes","reduction_percent","processing_ms","format"];
+  const lines=[headers.join(",")];
+  for(const r of rows)lines.push([r.name,r.ow,r.oh,r.originalSize,r.mw,r.mh,r.master.size,r.tw,r.th,r.thumb.size,(100*(1-r.master.size/r.originalSize)).toFixed(2),r.ms.toFixed(1),r.type].map(v=>'"'+String(v).replaceAll('"','""')+'"').join(","));
+  download(new Blob([lines.join("\n")],{type:"text/csv"}),"retrogames-image-compression-results.csv");
+};
+$("photosPerItem").onchange=render;
+</script>
+</body>
+</html>
