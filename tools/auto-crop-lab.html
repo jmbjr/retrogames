@@ -118,7 +118,7 @@ function autoDetect(){
 async function loadCurrent(){
  const record=records[currentIndex];if(!record)return;file=record.file;$("status").textContent=`Loading ${currentIndex+1} of ${records.length}: ${file.name}`;if(source?.close)source.close();
  try{
-  source=await loadImage(file);crop=record.crop?{...record.crop}:{x:0,y:0,width:100,height:100};drawPreview();if(!record.crop)autoDetect();else updateUI();
+  source=await loadImage(file);const needsDetection=!record.crop;crop=record.crop?{...record.crop}:{x:0,y:0,width:100,height:100};drawPreview();if(needsDetection)autoDetect();else updateUI();
   ["detect","full","download","copy"].forEach(id=>$(id).disabled=false);
   $("previous").disabled=currentIndex===0;$("next").disabled=currentIndex===records.length-1;
   $("editorPanel").classList.remove("hidden");$("resultPanel").classList.remove("hidden");
