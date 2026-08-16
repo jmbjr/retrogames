@@ -96,7 +96,7 @@ function updateUI(){
  const px={x:Math.round(workingSource.width*crop.x/100),y:Math.round(workingSource.height*crop.y/100),width:Math.round(workingSource.width*crop.width/100),height:Math.round(workingSource.height*crop.height/100)};
  const out=target(px.width,px.height,+$("maxEdge").value);
  $("json").textContent=JSON.stringify({rotation,cropPercent:roundedCrop()});
- $("metrics").innerHTML=[["Source",source.width+"×"+source.height],["Crop pixels",px.width+"×"+px.height],["Output",out.w+"×"+out.h],["Area retained",(crop.width*crop.height/100).toFixed(1)+"%"]].map(([a,b])=>'<div class="metric"><span>'+a+'</span><strong>'+b+'</strong></div>').join("");
+ $("metrics").innerHTML=[["Oriented source",workingSource.width+"×"+workingSource.height],["Crop pixels",px.width+"×"+px.height],["Output",out.w+"×"+out.h],["Area retained",(crop.width*crop.height/100).toFixed(1)+"%"]].map(([a,b])=>'<div class="metric"><span>'+a+'</span><strong>'+b+'</strong></div>').join("");
 }
 function backgroundColor(data,w,h){
  const samples=[],step=Math.max(1,Math.floor(Math.min(w,h)/80)),band=Math.max(2,Math.round(Math.min(w,h)*.025));
