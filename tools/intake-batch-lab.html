@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Retrogames Intake Batch Lab</title>
+<style>
+:root{color-scheme:dark;--bg:#10131a;--panel:#1a2030;--ink:#f5f7fb;--muted:#abb5ca;--line:#354057;--accent:#ffb347}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif}
+main{max-width:900px;margin:auto;padding:max(18px,env(safe-area-inset-top)) 14px 48px}
+h1{margin:.2em 0}.lede,.status,.note{color:var(--muted)}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px;margin:14px 0}
+input,button{font:inherit}input[type=file]{width:100%;padding:15px;border:2px dashed var(--line);border-radius:10px;background:#0d1119}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:12px 0}
+label{display:grid;gap:4px;color:var(--muted);font-size:.9rem}input[type=range]{width:100%}
+.actions{display:flex;flex-wrap:wrap;gap:9px;margin:12px 0}button{min-height:44px;padding:10px 14px;border:0;border-radius:9px;background:var(--accent);color:#211405;font-weight:750}
+button.secondary{background:#313b50;color:var(--ink)}button:disabled{opacity:.45}
+.stage{position:relative;width:100%;overflow:hidden;border-radius:9px;background:#080a0f;touch-action:none}
+.stage canvas{display:block;width:100%;height:auto}
+.crop-box{position:absolute;left:var(--x);top:var(--y);width:var(--w);height:var(--h);border:3px solid var(--accent);background:rgba(255,179,71,.08);box-shadow:0 0 0 9999px rgba(0,0,0,.48);cursor:move;touch-action:none}
+.handle{position:absolute;right:-12px;bottom:-12px;width:25px;height:25px;border:3px solid white;border-radius:50%;background:#b54b36;cursor:nwse-resize}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}.metric{padding:10px;background:#0d1119;border-radius:8px}.metric strong{display:block;color:var(--accent)}
+code{word-break:break-all}.hidden{display:none}
+</style>
+</head>
+<body>
+<main>
+<h1>Intake Batch Lab</h1>
+<p class="lede">Creates private, migration-ready inventory batches. Photos are rotated, cropped and compressed locally; nothing uploads until you download and deliberately place the ZIP in the private intake repository.</p>
+<section class="panel">
+<h2>Current draft item</h2>
+<div class="controls">
+<label>Batch ID<input id="batchId" readonly></label>
+<label>Item ID<input id="itemId" readonly></label>
+<label>Title guess<input id="itemTitle" placeholder="Optional; enrich later"></label>
+<label>Item type<select id="itemType"><option>game</option><option>console</option><option>controller</option><option>power-supply</option><option>av-cable</option><option>cable</option><option>peripheral</option><option>box</option><option>manual</option><option>other</option></select></label>
+<label>Platform<input id="platform" placeholder="NES, SNES, Genesis…"></label>
+<label>Condition<select id="condition"><option>Good</option><option>Great</option><option>Fair</option></select></label>
+<label>Batch location<input id="location" placeholder="Family-only shorthand"></label>
+<label>Current photo role<select id="photoRole"><option>front</option><option>back</option><option>top</option><option>bottom</option><option>connector</option><option>serial-label</option><option>electrical-label</option><option>side</option><option>pcb</option><option>damage</option><option>overall</option><option>other</option></select></label>
+</div>
+<div class="actions">
+<button id="newItem">Start next item</button>
+<button id="exportBatch" class="secondary" disabled>Export private batch ZIP</button>
+</div>
+<p class="note">Choose all photos for this item below. Then select <strong>Start next item</strong>, enter its minimal metadata, and add that item's photos. All records remain drafts.</p>
+</section>
+<section class="panel">
+<label>Add photos for the current item<input id="file" type="file" accept="image/*" multiple></label>
+<div class="controls">
+<label>Background sensitivity <span id="thresholdValue">32</span>
+<input id="threshold" type="range" min="10" max="100" value="32">
+</label>
+<label>Padding <span id="paddingValue">5%</span>
+<input id="padding" type="range" min="0" max="20" value="5">
+</label>
+<label>Output long edge
+<input id="maxEdge" type="number" min="800" max="6000" step="100" value="2560">
+</label>
+<label>WebP quality
+<input id="quality" type="number" min=".4" max="1" step=".01" value=".82">
+</label>
+</div>
+<div class="actions">
+<button id="previous" class="secondary" disabled>← Previous</button>
+<button id="next" class="secondary" disabled>Next →</button>
+<button id="rotateLeft" class="secondary" disabled>↶ Rotate left</button>
+<button id="rotateRight" class="secondary" disabled>Rotate right ↷</button>
+<button id="detect" disabled>Reset to automatic</button>
+<button id="full" class="secondary" disabled>Use full image</button>
+<button id="download" class="secondary" disabled>Download cropped master</button>
+<button id="copy" class="secondary" disabled>Copy crop JSON</button>
+</div>
+<p id="status" class="status" role="status">Choose one photo.</p>
+</section>
+<section id="editorPanel" class="panel hidden">
+<div id="stage" class="stage">
+<canvas id="preview"></canvas>
+<div id="crop" class="crop-box"><span class="handle" aria-hidden="true"></span></div>
+</div>
+<p class="note">Drag inside the gold box to move it. Drag the circular lower-right handle to resize it. Automatic cropping is only a suggestion—keep important edges and labels inside.</p>
+</section>
+<section id="resultPanel" class="panel hidden">
+<h2>Current crop</h2>
+<div id="metrics" class="metrics"></div>
+<p><code id="json"></code></p>
+</section>
+<script type="module">
+const $=id=>document.getElementById(id);
+let source=null,workingSource=null,file=null,files=[],records=[],currentIndex=0,rotation=0,crop={x:0,y:0,width:100,height:100},previewScale=1,drag=null;
+const items=new Map();
+const opaqueId=prefix=>prefix+"_"+(crypto.randomUUID?crypto.randomUUID().replaceAll("-",""):Date.now().toString(36)+Math.random().toString(36).slice(2));
+const batchId="batch_"+new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z").toLowerCase()+"_"+Math.random().toString(36).slice(2,8);
+let activeItemId=opaqueId("item");
+const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+const roundedCrop=()=>Object.fromEntries(Object.entries(crop).map(([k,v])=>[k,+v.toFixed(2)]));
+const fmt=n=>n<1024?n+" B":n<1048576?(n/1024).toFixed(1)+" KiB":(n/1048576).toFixed(2)+" MiB";
+const itemFields=["itemTitle","itemType","platform","condition","location"];
+function ensureItem(id=activeItemId){if(!items.has(id))items.set(id,{id,status:"draft",titleGuess:"",itemType:"game",platform:"",condition:"Good",location:""});return items.get(id)}
+function showItem(id){
+ activeItemId=id;const item=ensureItem(id);$("itemId").value=id;$("itemTitle").value=item.titleGuess;$("itemType").value=item.itemType;$("platform").value=item.platform;$("condition").value=item.condition;$("location").value=item.location;
+}
+function saveItemFields(){const item=ensureItem();item.titleGuess=$("itemTitle").value.trim();item.itemType=$("itemType").value;item.platform=$("platform").value.trim();item.condition=$("condition").value;item.location=$("location").value.trim()}
+$("batchId").value=batchId;showItem(activeItemId);
+itemFields.forEach(id=>$(id).addEventListener("input",saveItemFields));
+$("newItem").onclick=()=>{saveItemFields();activeItemId=opaqueId("item");showItem(activeItemId);$("file").value="";$("status").textContent="New draft item ready. Enter minimal metadata and choose its photos."};
+function target(w,h,max){const s=Math.min(1,max/Math.max(w,h));return{w:Math.max(1,Math.round(w*s)),h:Math.max(1,Math.round(h*s))}}
+async function loadImage(blob){
+ if("createImageBitmap" in window)return createImageBitmap(blob,{imageOrientation:"from-image"});
+ return new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(blob);img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=reject;img.src=url});
+}
+function buildWorkingSource(){
+ const quarter=rotation===90||rotation===270,canvas=document.createElement("canvas");
+ canvas.width=quarter?source.height:source.width;canvas.height=quarter?source.width:source.height;
+ const ctx=canvas.getContext("2d");
+ if(rotation===90){ctx.translate(canvas.width,0);ctx.rotate(Math.PI/2)}
+ else if(rotation===180){ctx.translate(canvas.width,canvas.height);ctx.rotate(Math.PI)}
+ else if(rotation===270){ctx.translate(0,canvas.height);ctx.rotate(-Math.PI/2)}
+ ctx.drawImage(source,0,0);workingSource=canvas;
+}
+function drawPreview(){
+ const max=1100,size=target(workingSource.width,workingSource.height,max),canvas=$("preview");canvas.width=size.w;canvas.height=size.h;previewScale=size.w/workingSource.width;
+ canvas.getContext("2d").drawImage(workingSource,0,0,size.w,size.h);updateUI();
+}
+function updateUI(){
+ if(records[currentIndex]){records[currentIndex].crop={...crop};records[currentIndex].rotation=rotation}
+ const box=$("crop");box.style.setProperty("--x",crop.x+"%");box.style.setProperty("--y",crop.y+"%");box.style.setProperty("--w",crop.width+"%");box.style.setProperty("--h",crop.height+"%");
+ const px={x:Math.round(workingSource.width*crop.x/100),y:Math.round(workingSource.height*crop.y/100),width:Math.round(workingSource.width*crop.width/100),height:Math.round(workingSource.height*crop.height/100)};
+ const out=target(px.width,px.height,+$("maxEdge").value);
+ $("json").textContent=JSON.stringify({rotation,cropPercent:roundedCrop()});
+ $("metrics").innerHTML=[["Oriented source",workingSource.width+"×"+workingSource.height],["Crop pixels",px.width+"×"+px.height],["Output",out.w+"×"+out.h],["Area retained",(crop.width*crop.height/100).toFixed(1)+"%"]].map(([a,b])=>'<div class="metric"><span>'+a+'</span><strong>'+b+'</strong></div>').join("");
+}
+function backgroundColor(data,w,h){
+ const samples=[],step=Math.max(1,Math.floor(Math.min(w,h)/80)),band=Math.max(2,Math.round(Math.min(w,h)*.025));
+ for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step)if(x<band||x>=w-band||y<band||y>=h-band){const i=(y*w+x)*4;samples.push([data[i],data[i+1],data[i+2]])}
+ samples.sort((a,b)=>(a[0]+a[1]+a[2])-(b[0]+b[1]+b[2]));const mid=samples.slice(Math.floor(samples.length*.2),Math.ceil(samples.length*.8));
+ return mid.reduce((a,p)=>[a[0]+p[0]/mid.length,a[1]+p[1]/mid.length,a[2]+p[2]/mid.length],[0,0,0]);
+}
+function largestComponent(mask,w,h){
+ const seen=new Uint8Array(mask.length),stack=[],best={count:0,minX:0,minY:0,maxX:w-1,maxY:h-1};
+ for(let start=0;start<mask.length;start++){if(!mask[start]||seen[start])continue;let count=0,minX=w,minY=h,maxX=0,maxY=0;seen[start]=1;stack.push(start);
+  while(stack.length){const i=stack.pop(),x=i%w,y=(i/w)|0;count++;minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+   if(x&&mask[i-1]&&!seen[i-1]){seen[i-1]=1;stack.push(i-1)}if(x<w-1&&mask[i+1]&&!seen[i+1]){seen[i+1]=1;stack.push(i+1)}
+   if(y&&mask[i-w]&&!seen[i-w]){seen[i-w]=1;stack.push(i-w)}if(y<h-1&&mask[i+w]&&!seen[i+w]){seen[i+w]=1;stack.push(i+w)}
+  }
+  if(count>best.count)Object.assign(best,{count,minX,minY,maxX,maxY});
+ }
+ return best;
+}
+function autoDetect(){
+ const max=420,size=target(workingSource.width,workingSource.height,max),canvas=document.createElement("canvas");canvas.width=size.w;canvas.height=size.h;
+ const ctx=canvas.getContext("2d",{willReadFrequently:true});ctx.drawImage(workingSource,0,0,size.w,size.h);const pixels=ctx.getImageData(0,0,size.w,size.h).data,bg=backgroundColor(pixels,size.w,size.h),threshold=+$("threshold").value,mask=new Uint8Array(size.w*size.h);
+ for(let i=0;i<mask.length;i++){const j=i*4,dr=pixels[j]-bg[0],dg=pixels[j+1]-bg[1],db=pixels[j+2]-bg[2];mask[i]=Math.sqrt(dr*dr+dg*dg+db*db)>threshold?1:0}
+ const c=largestComponent(mask,size.w,size.h);
+ if(c.count<size.w*size.h*.01){$("status").textContent="Could not find a large foreground object. Try lowering sensitivity or adjust manually.";return}
+ const pad=+$("padding").value/100,raw={x:c.minX/size.w,y:c.minY/size.h,width:(c.maxX-c.minX+1)/size.w,height:(c.maxY-c.minY+1)/size.h};
+ const px=raw.width*pad,py=raw.height*pad,x=clamp(raw.x-px,0,1),y=clamp(raw.y-py,0,1);
+ crop={x:x*100,y:y*100,width:Math.min(1-x,raw.width+2*px)*100,height:Math.min(1-y,raw.height+2*py)*100};updateUI();
+ $("status").textContent="Automatic crop proposed. Check every edge, then adjust if needed.";
+}
+async function loadCurrent(){
+ const record=records[currentIndex];if(!record)return;showItem(record.itemId);$("photoRole").value=record.role;file=record.file;$("status").textContent=`Loading ${currentIndex+1} of ${records.length}: ${file.name}`;if(source?.close)source.close();
+ try{
+  source=await loadImage(file);rotation=record.rotation||0;buildWorkingSource();const needsDetection=!record.crop;crop=record.crop?{...record.crop}:{x:0,y:0,width:100,height:100};drawPreview();if(needsDetection)autoDetect();else updateUI();
+  ["detect","full","download","copy","rotateLeft","rotateRight"].forEach(id=>$(id).disabled=false);
+  $("previous").disabled=currentIndex===0;$("next").disabled=currentIndex===records.length-1;
+  $("editorPanel").classList.remove("hidden");$("resultPanel").classList.remove("hidden");
+  $("status").textContent=`Image ${currentIndex+1} of ${records.length}: ${file.name}. Review the crop, download it, then choose Next.`;
+ }catch(e){$("status").textContent="Could not load image: "+e.message}
+}
+$("file").onchange=async()=>{
+ files=[...$("file").files];if(!files.length)return;saveItemFields();const start=records.length;for(const file of files)records.push({file,itemId:activeItemId,imageId:opaqueId("img"),role:$("photoRole").value,crop:null,rotation:0});
+ currentIndex=start;$("exportBatch").disabled=!records.length;await loadCurrent();
+};
+$("previous").onclick=async()=>{if(currentIndex>0){currentIndex--;await loadCurrent()}};
+$("next").onclick=async()=>{if(currentIndex<records.length-1){currentIndex++;await loadCurrent()}};
+$("photoRole").onchange=()=>{if(records[currentIndex])records[currentIndex].role=$("photoRole").value};
+function rotate(delta){
+ rotation=(rotation+delta+360)%360;records[currentIndex].rotation=rotation;records[currentIndex].crop=null;
+ buildWorkingSource();crop={x:0,y:0,width:100,height:100};drawPreview();autoDetect();
+ $("status").textContent=`Rotated ${rotation}°. Automatic crop reset; review it before downloading.`;
+}
+$("rotateLeft").onclick=()=>rotate(-90);
+$("rotateRight").onclick=()=>rotate(90);
+$("detect").onclick=autoDetect;
+$("full").onclick=()=>{crop={x:0,y:0,width:100,height:100};updateUI();$("status").textContent="Using the full image."};
+$("threshold").oninput=()=>{$("thresholdValue").textContent=$("threshold").value;if(source)autoDetect()};
+$("padding").oninput=()=>{$("paddingValue").textContent=$("padding").value+"%";if(source)autoDetect()};
+$("maxEdge").onchange=$("quality").onchange=()=>source&&updateUI();
+$("crop").addEventListener("pointerdown",e=>{e.preventDefault();const box=$("stage").getBoundingClientRect();drag={mode:e.target.classList.contains("handle")?"resize":"move",sx:e.clientX,sy:e.clientY,start:{...crop},box};$("crop").setPointerCapture(e.pointerId)});
+$("crop").addEventListener("pointermove",e=>{if(!drag||!$("crop").hasPointerCapture(e.pointerId))return;const dx=(e.clientX-drag.sx)/drag.box.width*100,dy=(e.clientY-drag.sy)/drag.box.height*100;
+ if(drag.mode==="move"){crop.x=clamp(drag.start.x+dx,0,100-crop.width);crop.y=clamp(drag.start.y+dy,0,100-crop.height)}
+ else{crop.width=clamp(drag.start.width+dx,3,100-drag.start.x);crop.height=clamp(drag.start.height+dy,3,100-drag.start.y)}updateUI()});
+$("crop").addEventListener("pointerup",e=>{if($("crop").hasPointerCapture(e.pointerId))$("crop").releasePointerCapture(e.pointerId);drag=null});
+$("copy").onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify({rotation,cropPercent:roundedCrop()},null,2));$("status").textContent="Crop JSON copied."}catch{$("status").textContent="Copy failed; select the JSON below manually."}};
+$("download").onclick=async()=>{
+ const sx=Math.round(workingSource.width*crop.x/100),sy=Math.round(workingSource.height*crop.y/100),sw=Math.round(workingSource.width*crop.width/100),sh=Math.round(workingSource.height*crop.height/100),size=target(sw,sh,+$("maxEdge").value),canvas=document.createElement("canvas");canvas.width=size.w;canvas.height=size.h;
+ canvas.getContext("2d",{alpha:false}).drawImage(workingSource,sx,sy,sw,sh,0,0,size.w,size.h);$("status").textContent="Encoding cropped master…";
+ const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error("WebP encoding failed")),"image/webp",+$("quality").value));
+ const a=document.createElement("a"),url=URL.createObjectURL(blob),base=file.name.replace(/\.[^.]+$/,"").replace(/[^a-z0-9_-]+/gi,"-");a.href=url;a.download=(base||"image")+"-cropped-master.webp";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ $("status").textContent="Downloaded "+size.w+"×"+size.h+" cropped master ("+fmt(blob.size)+").";
+};
+
+async function orientedForRecord(record){
+ const img=await loadImage(record.file),quarter=record.rotation===90||record.rotation===270,canvas=document.createElement("canvas");canvas.width=quarter?img.height:img.width;canvas.height=quarter?img.width:img.height;const ctx=canvas.getContext("2d");
+ if(record.rotation===90){ctx.translate(canvas.width,0);ctx.rotate(Math.PI/2)}else if(record.rotation===180){ctx.translate(canvas.width,canvas.height);ctx.rotate(Math.PI)}else if(record.rotation===270){ctx.translate(0,canvas.height);ctx.rotate(-Math.PI/2)}
+ ctx.drawImage(img,0,0);if(img.close)img.close();return canvas;
+}
+async function canvasBlob(canvas,type,quality){return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error("Encoding failed")),type,quality))}
+async function encodeRecord(record){
+ const oriented=await orientedForRecord(record),c=record.crop||{x:0,y:0,width:100,height:100},sx=Math.round(oriented.width*c.x/100),sy=Math.round(oriented.height*c.y/100),sw=Math.round(oriented.width*c.width/100),sh=Math.round(oriented.height*c.height/100);
+ async function derivative(maxEdge,quality){const size=target(sw,sh,maxEdge),canvas=document.createElement("canvas");canvas.width=size.w;canvas.height=size.h;canvas.getContext("2d",{alpha:false}).drawImage(oriented,sx,sy,sw,sh,0,0,size.w,size.h);return{blob:await canvasBlob(canvas,"image/webp",quality),width:size.w,height:size.h}}
+ return{master:await derivative(+$("maxEdge").value,+$("quality").value),thumb:await derivative(640,.76)};
+}
+async function sha256(bytes){const hash=new Uint8Array(await crypto.subtle.digest("SHA-256",bytes));return[...hash].map(x=>x.toString(16).padStart(2,"0")).join("")}
+const crcTable=(()=>{const table=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?0xedb88320^(c>>>1):c>>>1;table[n]=c>>>0}return table})();
+function crc32(bytes){let c=0xffffffff;for(const b of bytes)c=crcTable[(c^b)&255]^(c>>>8);return(c^0xffffffff)>>>0}
+function u16(v){return new Uint8Array([v&255,(v>>>8)&255])}function u32(v){return new Uint8Array([v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255])}
+function concat(parts){const size=parts.reduce((n,p)=>n+p.length,0),out=new Uint8Array(size);let at=0;for(const p of parts){out.set(p,at);at+=p.length}return out}
+function dosDate(date){return{time:(date.getHours()<<11)|(date.getMinutes()<<5)|(date.getSeconds()>>1),date:((date.getFullYear()-1980)<<9)|((date.getMonth()+1)<<5)|date.getDate()}}
+function makeZip(entries){
+ const enc=new TextEncoder(),locals=[],centrals=[];let offset=0;const stamp=dosDate(new Date());
+ for(const entry of entries){const name=enc.encode(entry.name),data=entry.bytes,crc=crc32(data),local=concat([u32(0x04034b50),u16(20),u16(0x0800),u16(0),u16(stamp.time),u16(stamp.date),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),name,data]);
+  const central=concat([u32(0x02014b50),u16(20),u16(20),u16(0x0800),u16(0),u16(stamp.time),u16(stamp.date),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(offset),name]);locals.push(local);centrals.push(central);offset+=local.length}
+ const central=concat(centrals),end=concat([u32(0x06054b50),u16(0),u16(0),u16(entries.length),u16(entries.length),u32(central.length),u32(offset),u16(0)]);return new Blob([...locals,central,end],{type:"application/zip"});
+}
+$("exportBatch").onclick=async()=>{
+ if(!records.length)return;saveItemFields();$("exportBatch").disabled=true;const entries=[],imageRows=[];
+ try{
+  for(let i=0;i<records.length;i++){const record=records[i];$("status").textContent=`Encoding batch image ${i+1} of ${records.length}…`;const encoded=await encodeRecord(record);
+   for(const [kind,data] of Object.entries(encoded)){const bytes=new Uint8Array(await data.blob.arrayBuffer()),name=`${batchId}/images/${record.itemId}/${record.imageId}-${kind}.webp`;entries.push({name,bytes});if(kind==="master")imageRows.push({id:record.imageId,itemId:record.itemId,role:record.role,rotation:record.rotation,cropPercent:record.crop,master:{path:name.replace(batchId+"/",""),width:data.width,height:data.height,bytes:bytes.length,sha256:await sha256(bytes)}});else imageRows.at(-1).thumbnail={path:name.replace(batchId+"/",""),width:data.width,height:data.height,bytes:bytes.length,sha256:await sha256(bytes)}}
+  }
+  const used=new Set(records.map(r=>r.itemId)),manifest={schemaVersion:1,batchId,createdAt:new Date().toISOString(),privacy:"family-only",state:"captured",items:[...used].map(id=>items.get(id)),images:imageRows};const manifestBytes=new TextEncoder().encode(JSON.stringify(manifest,null,2)+"\n");entries.unshift({name:`${batchId}/manifest.json`,bytes:manifestBytes});
+  const zip=makeZip(entries),a=document.createElement("a"),url=URL.createObjectURL(zip);a.href=url;a.download=batchId+".zip";a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);$("status").textContent=`Exported ${records.length} photos for ${used.size} draft item(s): ${fmt(zip.size)}. Keep this ZIP private.`;
+ }catch(e){$("status").textContent="Batch export failed: "+e.message}finally{$("exportBatch").disabled=false}
+};
+</script>
+</body>
+</html>
