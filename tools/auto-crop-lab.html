@@ -27,7 +27,7 @@ code{word-break:break-all}.hidden{display:none}
 <h1>Auto-Crop Lab</h1>
 <p class="lede">Detects an object against a plain background, proposes a padded crop, and lets you move or resize it. Everything stays on this device.</p>
 <section class="panel">
-<input id="file" type="file" accept="image/*">
+<input id="file" type="file" accept="image/*" multiple>
 <div class="controls">
 <label>Background sensitivity <span id="thresholdValue">32</span>
 <input id="threshold" type="range" min="10" max="100" value="32">
@@ -43,6 +43,8 @@ code{word-break:break-all}.hidden{display:none}
 </label>
 </div>
 <div class="actions">
+<button id="previous" class="secondary" disabled>← Previous</button>
+<button id="next" class="secondary" disabled>Next →</button>
 <button id="detect" disabled>Reset to automatic</button>
 <button id="full" class="secondary" disabled>Use full image</button>
 <button id="download" class="secondary" disabled>Download cropped master</button>
@@ -64,7 +66,7 @@ code{word-break:break-all}.hidden{display:none}
 </section>
 <script type="module">
 const $=id=>document.getElementById(id);
-let source=null,file=null,crop={x:0,y:0,width:100,height:100},previewScale=1,drag=null;
+let source=null,file=null,files=[],records=[],currentIndex=0,crop={x:0,y:0,width:100,height:100},previewScale=1,drag=null;
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const roundedCrop=()=>Object.fromEntries(Object.entries(crop).map(([k,v])=>[k,+v.toFixed(2)]));
 const fmt=n=>n<1024?n+" B":n<1048576?(n/1024).toFixed(1)+" KiB":(n/1048576).toFixed(2)+" MiB";
@@ -78,6 +80,7 @@ function drawPreview(){
  canvas.getContext("2d").drawImage(source,0,0,size.w,size.h);updateUI();
 }
 function updateUI(){
+ if(records[currentIndex])records[currentIndex].crop={...crop};
  const box=$("crop");box.style.setProperty("--x",crop.x+"%");box.style.setProperty("--y",crop.y+"%");box.style.setProperty("--w",crop.width+"%");box.style.setProperty("--h",crop.height+"%");
  const px={x:Math.round(source.width*crop.x/100),y:Math.round(source.height*crop.y/100),width:Math.round(source.width*crop.width/100),height:Math.round(source.height*crop.height/100)};
  const out=target(px.width,px.height,+$("maxEdge").value);
@@ -112,11 +115,21 @@ function autoDetect(){
  crop={x:x*100,y:y*100,width:Math.min(1-x,raw.width+2*px)*100,height:Math.min(1-y,raw.height+2*py)*100};updateUI();
  $("status").textContent="Automatic crop proposed. Check every edge, then adjust if needed.";
 }
+async function loadCurrent(){
+ const record=records[currentIndex];if(!record)return;file=record.file;$("status").textContent=`Loading ${currentIndex+1} of ${records.length}: ${file.name}`;if(source?.close)source.close();
+ try{
+  source=await loadImage(file);crop=record.crop?{...record.crop}:{x:0,y:0,width:100,height:100};drawPreview();if(!record.crop)autoDetect();else updateUI();
+  ["detect","full","download","copy"].forEach(id=>$(id).disabled=false);
+  $("previous").disabled=currentIndex===0;$("next").disabled=currentIndex===records.length-1;
+  $("editorPanel").classList.remove("hidden");$("resultPanel").classList.remove("hidden");
+  $("status").textContent=`Image ${currentIndex+1} of ${records.length}: ${file.name}. Review the crop, download it, then choose Next.`;
+ }catch(e){$("status").textContent="Could not load image: "+e.message}
+}
 $("file").onchange=async()=>{
- file=$("file").files[0];if(!file)return;$("status").textContent="Loading locally…";if(source?.close)source.close();
- try{source=await loadImage(file);drawPreview();autoDetect();["detect","full","download","copy"].forEach(id=>$(id).disabled=false);$("editorPanel").classList.remove("hidden");$("resultPanel").classList.remove("hidden")}
- catch(e){$("status").textContent="Could not load image: "+e.message}
+ files=[...$("file").files];if(!files.length)return;records=files.map(file=>({file,crop:null}));currentIndex=0;await loadCurrent();
 };
+$("previous").onclick=async()=>{if(currentIndex>0){currentIndex--;await loadCurrent()}};
+$("next").onclick=async()=>{if(currentIndex<records.length-1){currentIndex++;await loadCurrent()}};
 $("detect").onclick=autoDetect;
 $("full").onclick=()=>{crop={x:0,y:0,width:100,height:100};updateUI();$("status").textContent="Using the full image."};
 $("threshold").oninput=()=>{$("thresholdValue").textContent=$("threshold").value;if(source)autoDetect()};
