@@ -74,3 +74,32 @@ Before accepting a final policy, add representative:
 - iPhone-generated photo if practical
 
 The full 25–50 item sample remains a target, but decisions may be staged after the difficult image categories have passed.
+
+
+## Smoke test 2 — dark power adapter and connector details
+
+Five edited automatic crops were visually reviewed:
+
+1. Overall rear adapter view with prongs and attached cable
+2. Adapter side profile with protruding prong
+3. Embossed electrical/model label
+4. Barrel connector side profile
+5. Barrel connector face/contact detail
+
+Results:
+
+- Automatic crop plus manual adjustment handled dark plastic against the light background.
+- Irregular protrusions—power prongs, cable strain relief and barrel connector—were retained.
+- Plastic texture, scuffs, connector geometry, center contact and polarity-relevant physical details remain visible.
+- The embossed electrical label is only partly easy to read, but the limiting factor is shallow relief, oblique camera angle and flat lighting rather than visible compression artifacts.
+- The connector closeups provide useful identification evidence and validate keeping dedicated connector-tip photography for power supplies and unusual cables.
+- Batch previous/next crop review worked successfully.
+
+Capture recommendations for embossed or low-contrast electrical labels:
+
+- Photograph the label more squarely.
+- Use low-angle/raking light from one side so embossed characters cast small shadows.
+- Tap/focus directly on the label and avoid digital zoom.
+- Retain an explicit original only if the compressed master cannot preserve required technical text after a better capture attempt.
+
+Provisional result: crop detection and WebP master quality pass for the dark-adapter/connector category. More ordinary adapter photos are unnecessary; remaining risk categories are glossy/reflective objects, damage/corrosion, optional PCB detail and at least one iPhone source.
