@@ -45,6 +45,8 @@ code{word-break:break-all}.hidden{display:none}
 <div class="actions">
 <button id="previous" class="secondary" disabled>← Previous</button>
 <button id="next" class="secondary" disabled>Next →</button>
+<button id="rotateLeft" class="secondary" disabled>↶ Rotate left</button>
+<button id="rotateRight" class="secondary" disabled>Rotate right ↷</button>
 <button id="detect" disabled>Reset to automatic</button>
 <button id="full" class="secondary" disabled>Use full image</button>
 <button id="download" class="secondary" disabled>Download cropped master</button>
@@ -66,7 +68,7 @@ code{word-break:break-all}.hidden{display:none}
 </section>
 <script type="module">
 const $=id=>document.getElementById(id);
-let source=null,file=null,files=[],records=[],currentIndex=0,crop={x:0,y:0,width:100,height:100},previewScale=1,drag=null;
+let source=null,workingSource=null,file=null,files=[],records=[],currentIndex=0,rotation=0,crop={x:0,y:0,width:100,height:100},previewScale=1,drag=null;
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const roundedCrop=()=>Object.fromEntries(Object.entries(crop).map(([k,v])=>[k,+v.toFixed(2)]));
 const fmt=n=>n<1024?n+" B":n<1048576?(n/1024).toFixed(1)+" KiB":(n/1048576).toFixed(2)+" MiB";
@@ -75,16 +77,25 @@ async function loadImage(blob){
  if("createImageBitmap" in window)return createImageBitmap(blob,{imageOrientation:"from-image"});
  return new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(blob);img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=reject;img.src=url});
 }
+function buildWorkingSource(){
+ const quarter=rotation===90||rotation===270,canvas=document.createElement("canvas");
+ canvas.width=quarter?source.height:source.width;canvas.height=quarter?source.width:source.height;
+ const ctx=canvas.getContext("2d");
+ if(rotation===90){ctx.translate(canvas.width,0);ctx.rotate(Math.PI/2)}
+ else if(rotation===180){ctx.translate(canvas.width,canvas.height);ctx.rotate(Math.PI)}
+ else if(rotation===270){ctx.translate(0,canvas.height);ctx.rotate(-Math.PI/2)}
+ ctx.drawImage(source,0,0);workingSource=canvas;
+}
 function drawPreview(){
- const max=1100,size=target(source.width,source.height,max),canvas=$("preview");canvas.width=size.w;canvas.height=size.h;previewScale=size.w/source.width;
- canvas.getContext("2d").drawImage(source,0,0,size.w,size.h);updateUI();
+ const max=1100,size=target(workingSource.width,workingSource.height,max),canvas=$("preview");canvas.width=size.w;canvas.height=size.h;previewScale=size.w/workingSource.width;
+ canvas.getContext("2d").drawImage(workingSource,0,0,size.w,size.h);updateUI();
 }
 function updateUI(){
- if(records[currentIndex])records[currentIndex].crop={...crop};
+ if(records[currentIndex]){records[currentIndex].crop={...crop};records[currentIndex].rotation=rotation}
  const box=$("crop");box.style.setProperty("--x",crop.x+"%");box.style.setProperty("--y",crop.y+"%");box.style.setProperty("--w",crop.width+"%");box.style.setProperty("--h",crop.height+"%");
- const px={x:Math.round(source.width*crop.x/100),y:Math.round(source.height*crop.y/100),width:Math.round(source.width*crop.width/100),height:Math.round(source.height*crop.height/100)};
+ const px={x:Math.round(workingSource.width*crop.x/100),y:Math.round(workingSource.height*crop.y/100),width:Math.round(workingSource.width*crop.width/100),height:Math.round(workingSource.height*crop.height/100)};
  const out=target(px.width,px.height,+$("maxEdge").value);
- $("json").textContent=JSON.stringify({cropPercent:roundedCrop()});
+ $("json").textContent=JSON.stringify({rotation,cropPercent:roundedCrop()});
  $("metrics").innerHTML=[["Source",source.width+"×"+source.height],["Crop pixels",px.width+"×"+px.height],["Output",out.w+"×"+out.h],["Area retained",(crop.width*crop.height/100).toFixed(1)+"%"]].map(([a,b])=>'<div class="metric"><span>'+a+'</span><strong>'+b+'</strong></div>').join("");
 }
 function backgroundColor(data,w,h){
@@ -105,8 +116,8 @@ function largestComponent(mask,w,h){
  return best;
 }
 function autoDetect(){
- const max=420,size=target(source.width,source.height,max),canvas=document.createElement("canvas");canvas.width=size.w;canvas.height=size.h;
- const ctx=canvas.getContext("2d",{willReadFrequently:true});ctx.drawImage(source,0,0,size.w,size.h);const pixels=ctx.getImageData(0,0,size.w,size.h).data,bg=backgroundColor(pixels,size.w,size.h),threshold=+$("threshold").value,mask=new Uint8Array(size.w*size.h);
+ const max=420,size=target(workingSource.width,workingSource.height,max),canvas=document.createElement("canvas");canvas.width=size.w;canvas.height=size.h;
+ const ctx=canvas.getContext("2d",{willReadFrequently:true});ctx.drawImage(workingSource,0,0,size.w,size.h);const pixels=ctx.getImageData(0,0,size.w,size.h).data,bg=backgroundColor(pixels,size.w,size.h),threshold=+$("threshold").value,mask=new Uint8Array(size.w*size.h);
  for(let i=0;i<mask.length;i++){const j=i*4,dr=pixels[j]-bg[0],dg=pixels[j+1]-bg[1],db=pixels[j+2]-bg[2];mask[i]=Math.sqrt(dr*dr+dg*dg+db*db)>threshold?1:0}
  const c=largestComponent(mask,size.w,size.h);
  if(c.count<size.w*size.h*.01){$("status").textContent="Could not find a large foreground object. Try lowering sensitivity or adjust manually.";return}
@@ -118,18 +129,25 @@ function autoDetect(){
 async function loadCurrent(){
  const record=records[currentIndex];if(!record)return;file=record.file;$("status").textContent=`Loading ${currentIndex+1} of ${records.length}: ${file.name}`;if(source?.close)source.close();
  try{
-  source=await loadImage(file);const needsDetection=!record.crop;crop=record.crop?{...record.crop}:{x:0,y:0,width:100,height:100};drawPreview();if(needsDetection)autoDetect();else updateUI();
-  ["detect","full","download","copy"].forEach(id=>$(id).disabled=false);
+  source=await loadImage(file);rotation=record.rotation||0;buildWorkingSource();const needsDetection=!record.crop;crop=record.crop?{...record.crop}:{x:0,y:0,width:100,height:100};drawPreview();if(needsDetection)autoDetect();else updateUI();
+  ["detect","full","download","copy","rotateLeft","rotateRight"].forEach(id=>$(id).disabled=false);
   $("previous").disabled=currentIndex===0;$("next").disabled=currentIndex===records.length-1;
   $("editorPanel").classList.remove("hidden");$("resultPanel").classList.remove("hidden");
   $("status").textContent=`Image ${currentIndex+1} of ${records.length}: ${file.name}. Review the crop, download it, then choose Next.`;
  }catch(e){$("status").textContent="Could not load image: "+e.message}
 }
 $("file").onchange=async()=>{
- files=[...$("file").files];if(!files.length)return;records=files.map(file=>({file,crop:null}));currentIndex=0;await loadCurrent();
+ files=[...$("file").files];if(!files.length)return;records=files.map(file=>({file,crop:null,rotation:0}));currentIndex=0;await loadCurrent();
 };
 $("previous").onclick=async()=>{if(currentIndex>0){currentIndex--;await loadCurrent()}};
 $("next").onclick=async()=>{if(currentIndex<records.length-1){currentIndex++;await loadCurrent()}};
+function rotate(delta){
+ rotation=(rotation+delta+360)%360;records[currentIndex].rotation=rotation;records[currentIndex].crop=null;
+ buildWorkingSource();crop={x:0,y:0,width:100,height:100};drawPreview();autoDetect();
+ $("status").textContent=`Rotated ${rotation}°. Automatic crop reset; review it before downloading.`;
+}
+$("rotateLeft").onclick=()=>rotate(-90);
+$("rotateRight").onclick=()=>rotate(90);
 $("detect").onclick=autoDetect;
 $("full").onclick=()=>{crop={x:0,y:0,width:100,height:100};updateUI();$("status").textContent="Using the full image."};
 $("threshold").oninput=()=>{$("thresholdValue").textContent=$("threshold").value;if(source)autoDetect()};
@@ -140,10 +158,10 @@ $("crop").addEventListener("pointermove",e=>{if(!drag||!$("crop").hasPointerCapt
  if(drag.mode==="move"){crop.x=clamp(drag.start.x+dx,0,100-crop.width);crop.y=clamp(drag.start.y+dy,0,100-crop.height)}
  else{crop.width=clamp(drag.start.width+dx,3,100-drag.start.x);crop.height=clamp(drag.start.height+dy,3,100-drag.start.y)}updateUI()});
 $("crop").addEventListener("pointerup",e=>{if($("crop").hasPointerCapture(e.pointerId))$("crop").releasePointerCapture(e.pointerId);drag=null});
-$("copy").onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify({cropPercent:roundedCrop()},null,2));$("status").textContent="Crop JSON copied."}catch{$("status").textContent="Copy failed; select the JSON below manually."}};
+$("copy").onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify({rotation,cropPercent:roundedCrop()},null,2));$("status").textContent="Crop JSON copied."}catch{$("status").textContent="Copy failed; select the JSON below manually."}};
 $("download").onclick=async()=>{
- const sx=Math.round(source.width*crop.x/100),sy=Math.round(source.height*crop.y/100),sw=Math.round(source.width*crop.width/100),sh=Math.round(source.height*crop.height/100),size=target(sw,sh,+$("maxEdge").value),canvas=document.createElement("canvas");canvas.width=size.w;canvas.height=size.h;
- canvas.getContext("2d",{alpha:false}).drawImage(source,sx,sy,sw,sh,0,0,size.w,size.h);$("status").textContent="Encoding cropped master…";
+ const sx=Math.round(workingSource.width*crop.x/100),sy=Math.round(workingSource.height*crop.y/100),sw=Math.round(workingSource.width*crop.width/100),sh=Math.round(workingSource.height*crop.height/100),size=target(sw,sh,+$("maxEdge").value),canvas=document.createElement("canvas");canvas.width=size.w;canvas.height=size.h;
+ canvas.getContext("2d",{alpha:false}).drawImage(workingSource,sx,sy,sw,sh,0,0,size.w,size.h);$("status").textContent="Encoding cropped master…";
  const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error("WebP encoding failed")),"image/webp",+$("quality").value));
  const a=document.createElement("a"),url=URL.createObjectURL(blob),base=file.name.replace(/\.[^.]+$/,"").replace(/[^a-z0-9_-]+/gi,"-");a.href=url;a.download=(base||"image")+"-cropped-master.webp";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  $("status").textContent="Downloaded "+size.w+"×"+size.h+" cropped master ("+fmt(blob.size)+").";
