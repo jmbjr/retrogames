@@ -1,6 +1,6 @@
 # Image compression pilot
 
-Status: In progress  
+Status: Complete  
 Issue: #5  
 Started: 2026-08-15
 
@@ -119,3 +119,61 @@ Results:
 The Auto-Crop Lab now provides Rotate left/Rotate right controls, stores rotation per queued image, rebuilds the oriented working image, reruns automatic cropping after rotation, and exports rotation with percentage crop metadata.
 
 Provisional result: glossy/reflective and PCB-detail categories pass at the current quality setting. Rotation is part of the required image-edit metadata alongside crop.
+
+
+## Initial storage cost projection
+
+Cloud Storage for Firebase now requires the Blaze pay-as-you-go plan, including new default buckets. A new `.firebasestorage.app` bucket can still use Google Cloud Storage's Always Free allowance when created in `US-CENTRAL1`, `US-EAST1` or `US-WEST1`.
+
+Current published no-cost allowances for a new bucket include:
+
+- 5 GB-month stored
+- 100 GB downloaded per month
+- 5,000 upload operations per month
+- 50,000 download operations per month
+
+The two-photo baseline projected approximately 388.7 KiB per ordinary three-photo item for one master and one thumbnail per photo:
+
+- 1,000 items: approximately 379.6 MiB
+- 5,000 items: approximately 1.85 GiB
+- 10,000 items: approximately 3.71 GiB
+
+Storage capacity should remain inside the 5 GB no-cost allowance through roughly 13,000 ordinary three-photo items at the measured average. Upload operations are more likely to reach the free allowance first: six object uploads per three-photo item imply roughly 833 newly processed items/month before 5,000 operations, excluding retries and replacements.
+
+Actual cost is expected to remain $0 for the initial family scale if a qualifying US regional bucket is used, but Blaze requires a billing account and permits chargeable overage. Budget alerts must be configured before activation; alerts notify but do not provide a hard spending cap.
+
+Do not enable Blaze/Storage solely to finish this spike. Enable it when the authenticated upload vertical slice is ready to test.
+
+Sources:
+
+- https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024
+- https://firebase.google.com/pricing
+- https://firebase.google.com/docs/storage/web/start
+
+## Accepted initial image policy
+
+- Capture at normal phone resolution.
+- Apply rotation before crop.
+- Generate an automatic crop against a controlled background; require a visible review and allow adjustment.
+- Store rotation and resolution-independent percentage crop metadata.
+- Preserve an uncropped compressed master at maximum 2560px long edge, WebP quality 0.82.
+- Generate a 640px WebP thumbnail at quality 0.76.
+- Generate cropped display/public derivatives from the master plus edit metadata.
+- Do not upload the untouched phone original by default.
+- Permit explicit original retention for hard-to-read electrical/serial labels, PCB markings, damage or other diagnostic evidence after a better capture attempt fails.
+- Default every image to family-only. Publish only a reviewed, sanitized derivative under the publication ADR.
+
+## Initial retention, deletion and export policy
+
+- Retain the compressed master and edit metadata while its physical-item record is active.
+- Treat thumbnails and public derivatives as reproducible outputs.
+- Use archive/soft deletion initially; do not permanently delete masters until the backup/export ADR is revisited.
+- When permanent deletion is later enabled, require an explicit authorized action and a recovery window.
+- A family export must include image metadata, rotation/crop values and retained masters; a public export may contain only explicitly approved sanitized derivatives.
+- Never assume Git history backs up Firestore or private object storage.
+
+## Spike conclusion
+
+The provisional defaults pass ordinary cartridge, small printed label, dark adapter, connector, glossy packaging, wear and PCB-detail samples. Browser processing was approximately one second per 12 MP source in the measured cartridge baseline. Automatic crop, manual adjustment, batch review and rotation were exercised successfully.
+
+The original 25–50 item target is not necessary before implementation because the deliberately difficult categories have passed. Re-measure throughput, failure rate, mean file size and monthly operations during the first real 25–50 item vertical-slice intake batch.
