@@ -103,3 +103,19 @@ Capture recommendations for embossed or low-contrast electrical labels:
 - Retain an explicit original only if the compressed master cannot preserve required technical text after a better capture attempt.
 
 Provisional result: crop detection and WebP master quality pass for the dark-adapter/connector category. More ordinary adapter photos are unnecessary; remaining risk categories are glossy/reflective objects, damage/corrosion, optional PCB detail and at least one iPhone source.
+
+
+## Smoke test 3 — glossy packaging, wear and PCB detail
+
+The pilot added a reflective clear game case with aged printed packaging plus an opened-device interior/PCB photograph.
+
+Results:
+
+- Fine packaging text, barcode, screenshots, discoloration, creases and reflective-case edges remain visible.
+- The crop retained the full case, including thin transparent edges that are harder to segment than an opaque cartridge.
+- PCB traces, solder joints, fasteners, wiring colors, strain relief, dirt/corrosion-like residue and mechanical components remain inspectable.
+- The sample exposed a missing workflow requirement: per-image 90-degree rotation before crop and compression.
+
+The Auto-Crop Lab now provides Rotate left/Rotate right controls, stores rotation per queued image, rebuilds the oriented working image, reruns automatic cropping after rotation, and exports rotation with percentage crop metadata.
+
+Provisional result: glossy/reflective and PCB-detail categories pass at the current quality setting. Rotation is part of the required image-edit metadata alongside crop.
